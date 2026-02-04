@@ -1,0 +1,5 @@
+{
+  "name": "HAP Intel - Hospitality Intelligence",
+  "description": "A professional OSINT tool for scoring and analyzing hospitality businesses using Gemini AI.",
+  "requestFramePermissions": []
+}
