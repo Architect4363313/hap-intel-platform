@@ -89,4 +89,16 @@ export interface BusinessProfile {
   priceLevel: string;
   cuisineType: string;
   googleSearchSources?: BusinessSource[];
+
+// Email Verification Types
+  export interface EmailVerificationResult {
+    email: string;
+      verified: boolean;
+      status: 'DELIVERABLE' | 'UNDELIVERABLE' | 'RISKY' | 'UNKNOWN';
+      statusDetail: string;
+  }
+
+  export interface EmailVerificationState {
+    [email: string]: 'idle' | 'loading' | 'verified' | 'unverified' | 'error';
+  }
 }
