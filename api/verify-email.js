@@ -1,38 +1,83 @@
-export default async function handler(req, res) {
-    if (req.method !== 'POST') {
-          return res.status(405).json({ error: 'Method not allowed' });
-    }
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk.toString();
+      if (body.length > 200_000) {
+        reject(new Error("Request body too large"));
+      }
+    });
+    req.on("end", () => {
+      if (!body) return resolve({});
+      try {
+        resolve(JSON.parse(body));
+      } catch (error) {
+        reject(error);
+      }
+    });
+    req.on("error", reject);
+  });
+}
 
-  const { email } = req.body;
+module.exports = async (req, res) => {
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
 
-  if (!email) {
-        return res.status(400).json({ error: 'Email is required' });
+  if (req.method === "OPTIONS") {
+    res.statusCode = 204;
+    res.end();
+    return;
   }
 
-  const apiKey = process.env.ABSTRACT_EMAIL_API_KEY;
-
-  if (!apiKey) {
-        return res.status(500).json({ error: 'API key not configured' });
+  if (req.method !== "POST") {
+    res.statusCode = 405;
+    res.end(JSON.stringify({ error: "Method not allowed" }));
+    return;
   }
 
   try {
-        const response = await fetch(
-                `https://emailreputation.abstractapi.com/v1/?api_key=${apiKey}&email=${encodeURIComponent(email)}`
-              );
+    const body = req.body && typeof req.body === "object" ? req.body : await readJsonBody(req);
+    const email = typeof body?.email === "string" ? body.email.trim() : "";
 
-      if (!response.ok) {
-              return res.status(response.status).json({ error: 'Email verification failed' });
-      }
+    if (!email) {
+      res.statusCode = 400;
+      res.end(JSON.stringify({ error: "Email is required" }));
+      return;
+    }
 
-            const data = await response.json();
+    const apiKey = process.env.ABSTRACT_EMAIL_API_KEY;
+    if (!apiKey) {
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: "API key not configured" }));
+      return;
+    }
 
-      return res.status(200).json({
-              email,
-              verified: data.deliverability === 'DELIVERABLE',
-              status: data.deliverability,
-              statusDetail: data.quality_score ? `Quality: ${data.quality_score}` : 'No quality score'
-      });
+    const abstractResponse = await fetch(
+      `https://emailreputation.abstractapi.com/v1/?api_key=${apiKey}&email=${encodeURIComponent(email)}`,
+    );
+
+    if (!abstractResponse.ok) {
+      res.statusCode = abstractResponse.status;
+      res.end(JSON.stringify({ error: "Email verification failed" }));
+      return;
+    }
+
+    const data = await abstractResponse.json();
+    const status = typeof data?.deliverability === "string" ? data.deliverability.toUpperCase() : "UNKNOWN";
+    const verified = status === "DELIVERABLE";
+    const statusDetail = data?.quality_score ? `Quality: ${data.quality_score}` : "No quality score";
+
+    res.statusCode = 200;
+    res.end(
+      JSON.stringify({
+        email,
+        verified,
+        status,
+        statusDetail,
+      }),
+    );
   } catch (error) {
-        return res.status(500).json({ error: 'Internal server error' });
+    res.statusCode = 500;
+    res.end(JSON.stringify({ error: "Internal server error" }));
   }
-}
+};

@@ -9,6 +9,13 @@ interface Props {
 const ResultsDisplay: React.FC<Props> = ({ profile, onNewSearch }) => {
   const [activeEmailTab, setActiveEmailTab] = useState(0);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [emailVerificationState, setEmailVerificationState] = useState<Record<string, {
+    loading: boolean;
+    verified: boolean | null;
+    status: string;
+    statusDetail: string;
+    error: string;
+  }>>({});
 
   // Safe accessor for outreach data that FILTERS OUT invalid/empty items
   const getOutreachVariants = (): OutreachVariant[] => {
@@ -50,6 +57,61 @@ const ResultsDisplay: React.FC<Props> = ({ profile, onNewSearch }) => {
     setCopiedIndex(index);
     // Reset status after 2 seconds
     setTimeout(() => setCopiedIndex(null), 2000);
+  };
+
+  const handleVerifyEmail = async (email: string) => {
+    setEmailVerificationState(prev => ({
+      ...prev,
+      [email]: {
+        loading: true,
+        verified: null,
+        status: '',
+        statusDetail: '',
+        error: ''
+      }
+    }));
+
+    try {
+      const response = await fetch('/api/verify-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ email })
+      });
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(payload?.error || `Verification failed (HTTP ${response.status})`);
+      }
+
+      const verified = Boolean(payload?.verified);
+      const status = payload?.status || (verified ? 'DELIVERABLE' : 'UNDELIVERABLE');
+      const statusDetail = payload?.statusDetail || '';
+
+      setEmailVerificationState(prev => ({
+        ...prev,
+        [email]: {
+          loading: false,
+          verified,
+          status,
+          statusDetail,
+          error: ''
+        }
+      }));
+    } catch (error: any) {
+      setEmailVerificationState(prev => ({
+        ...prev,
+        [email]: {
+          loading: false,
+          verified: null,
+          status: '',
+          statusDetail: '',
+          error: error?.message || 'Verification failed'
+        }
+      }));
+    }
   };
 
   const handlePerplexityClick = () => {
@@ -250,10 +312,47 @@ Ubicación: ${profile.city}`;
                                         <span>•</span>
                                         <span>RISK: {email.risk}</span>
                                     </div>
+                                    {emailVerificationState[email.email]?.loading && (
+                                        <div className="mt-2 text-[9px] font-bold uppercase text-blue-700">VERIFYING...</div>
+                                    )}
+                                    {!emailVerificationState[email.email]?.loading && emailVerificationState[email.email]?.verified === true && (
+                                        <div className="mt-2 flex items-center gap-2">
+                                            <span className="inline-block px-2 py-0.5 text-[8px] font-bold rounded-sm uppercase bg-green-100 text-green-800">
+                                                VALID
+                                            </span>
+                                            <span className="text-[9px] text-green-700 uppercase">
+                                                {emailVerificationState[email.email]?.status}
+                                            </span>
+                                        </div>
+                                    )}
+                                    {!emailVerificationState[email.email]?.loading && emailVerificationState[email.email]?.verified === false && (
+                                        <div className="mt-2 flex items-center gap-2">
+                                            <span className="inline-block px-2 py-0.5 text-[8px] font-bold rounded-sm uppercase bg-red-100 text-red-800">
+                                                INVALID
+                                            </span>
+                                            <span className="text-[9px] text-red-700 uppercase">
+                                                {emailVerificationState[email.email]?.status || 'UNDELIVERABLE'}
+                                            </span>
+                                        </div>
+                                    )}
+                                    {emailVerificationState[email.email]?.statusDetail && !emailVerificationState[email.email]?.error && (
+                                        <div className="mt-1 text-[9px] text-gray-500">
+                                            {emailVerificationState[email.email]?.statusDetail}
+                                        </div>
+                                    )}
+                                    {emailVerificationState[email.email]?.error && (
+                                        <div className="mt-1 text-[9px] text-red-600">
+                                            {emailVerificationState[email.email]?.error}
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="flex items-center gap-2 opacity-60 group-hover:opacity-100 transition-opacity">
-                                    <button className="px-2 py-1 border border-gray-200 text-[8px] font-bold uppercase hover:bg-black hover:text-white transition-colors text-black">
-                                        VERIFY_API
+                                    <button
+                                        onClick={() => handleVerifyEmail(email.email)}
+                                        disabled={emailVerificationState[email.email]?.loading}
+                                        className="px-2 py-1 border border-gray-200 text-[8px] font-bold uppercase hover:bg-black hover:text-white transition-colors text-black disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {emailVerificationState[email.email]?.loading ? 'VERIFYING...' : 'VERIFY_API'}
                                     </button>
                                     <button 
                                         onClick={() => handleCopyEmail(email.email, i)}
